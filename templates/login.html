@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Sign In - Health System Management{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-body">
+        <h2 class="card-title text-center mb-4">Sign In</h2>
+
+        <form method="POST" action="{{ url_for('login') }}">
+          <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" class="form-control" id="email" name="email" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            <input type="password" class="form-control" id="password" name="password" required>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label d-block">Sign in as</label>
+            <div class="btn-group w-100" role="group" aria-label="Role selection">
+              <input type="radio" class="btn-check" name="role" id="rolePatient" value="patient" checked>
+              <label class="btn btn-outline-primary" for="rolePatient">Patient</label>
+
+              <input type="radio" class="btn-check" name="role" id="roleDoctor" value="doctor">
+              <label class="btn btn-outline-primary" for="roleDoctor">Doctor</label>
+
+              <input type="radio" class="btn-check" name="role" id="roleStaff" value="staff">
+              <label class="btn btn-outline-primary" for="roleStaff">Front Desk</label>
+            </div>
+          </div>
+
+          <div class="d-grid gap-4">
+            <button type="submit" class="btn btn-primary">Sign In</button>
+            <a href="/register" class="btn btn-outline-primary">Create Account</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
