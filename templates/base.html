@@ -9,7 +9,7 @@
 <body>
   <nav class="navbar navbar-expand-lg navbar-light bg-light mb-4">
     <div class="container">
-      <a class="navbar-brand" href="/">Health System Management</a>
+      <a class="navbar-brand" href="{{ url_for(session.get('role') ~ '_dashboard') if session.get('role') in ['patient', 'doctor', 'staff'] else url_for('login') }}">Health System Management</a>
       {% if session.get('user_id') %}
         <div class="navbar-nav ms-auto">
           <span class="navbar-text me-3">
