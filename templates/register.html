@@ -8,7 +8,7 @@
       <div class="card-body p-4">
         <h2 class="card-title text-center mb-4">Patient Registration</h2>
 
-        <form method="POST" action="{{ url_for('register') }}" novalidate>
+        <form method="POST" action="{{ url_for('auth.register') }}" novalidate>
           <h5 class="border-bottom pb-2 mb-3 text-secondary">Account Credentials</h5>
           <div class="row g-3 mb-3">
             <div class="col-12">
@@ -91,7 +91,7 @@
 
           <div class="d-grid gap-2">
             <button type="submit" class="btn btn-primary">Create Account</button>
-            <a href="{{ url_for('login') }}" class="btn btn-outline-secondary">Already have an account? Sign In</a>
+            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary">Already have an account? Sign In</a>
           </div>
         </form>
       </div>
