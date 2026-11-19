@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Health System Management{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h2 class="fw-bold mb-1">Welcome back, {{ first_name }}</h2>
+</div>
+
+<!-- Main Section: Calendar on Left, Next Appointment & Actions on Right -->
+<div class="row g-4 mb-4">
+  <!-- Left Column: Calendar Card -->
+  <div class="col-lg-6 col-md-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="calPrevBtn" title="Previous Month">&lt;</button>
+        <h5 class="card-title mb-0 fw-bold text-uppercase" id="calMonthYear">Calendar</h5>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="calNextBtn" title="Next Month">&gt;</button>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-bordered text-center align-middle mb-0" style="table-layout: fixed;">
+            <thead class="table-light">
+              <tr class="small text-secondary fw-semibold">
+                <th>S</th><th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th>S</th>
+              </tr>
+            </thead>
+            <tbody id="calBody">
+              <!-- Dynamically populated via JS -->
+            </tbody>
+          </table>
+        </div>
+        <div id="calSelectedInfo" class="p-3 d-none">
+        <h6 class="fw-bold mb-2 text-primary" id="calSelectedDateTitle">Appointment Details</h6>
+        <div id="calSelectedDateDetails"></div>
+    </div>
+      </div>
+      <div class="card-footer bg-white border-top py-2 px-3 small text-muted d-flex justify-content-between align-items-center">
+        <span><span class="badge bg-primary">&nbsp;</span> Booked Appointment</span>
+        <button type="button" class="btn btn-link btn-sm text-decoration-none p-0" id="calTodayBtn">Jump to Today</button>
+      </div>
+    </div>
+
+    <!-- Selected Date Details Panel -->
+    
+  </div>
+
+  <!-- Right Column: Next Appointment Card + Action Buttons -->
+  <div class="col-lg-6 col-md-5 ps-lg-3">
+    <!-- Next Appointment Card -->
+    <div class="card shadow-sm mb-3">
+      <div class="card-body p-4">
+        <div class="small fw-semibold mb-1">Next Appointment</div>
+        {% if next_appointment %}
+          <h3 class="fw-bold text-dark mb-1">{{ next_appointment.date_display }}</h3>
+          <p class="text-secondary mb-3">{{ next_appointment.doctor_clinic }}</p>
+          <div class="d-flex gap-2">
+            <a href="{{ url_for('patient.appointments') }}" class="btn btn-outline-primary btn-sm px-3">
+              Reschedule
+            </a>
+            <a href="{{ url_for('patient.appointments') }}" class="btn btn-outline-danger btn-sm px-3">
+              Cancel
+            </a>
+          </div>
+        {% else %}
+          <h4 class="text-secondary fw-normal mb-1">No upcoming appointment</h4>
+          <p class="text-muted small mb-0">You currently have no scheduled appointments.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 3 Action Buttons Stack -->
+    <div class="d-flex flex-column align-items-start gap-2">
+      <a href="{{ url_for('patient.book') }}" class="btn btn-outline-primary py-2 text-start">
+        <span class="fw-semibold">Book Appointment</span>
+      </a>
+      <a href="{{ url_for('patient.providers') }}" class="btn btn-outline-primary py-2 text-start">
+        <span class="fw-semibold">Find a provider</span>
+      </a>
+      <a href="{{ url_for('patient.history') }}" class="btn btn-outline-primary py-2 text-start">
+        <span class="fw-semibold">View records</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Section: Recent Visits Table -->
+<div class="container px-0 pb-4">
+<div class="card shadow-sm">
+  <div class="card-header bg-white py-3">
+    <h5 class="card-title mb-0 fw-bold">Recent Visits</h5>
+  </div>
+  <div class="card-body p-0">
+    {% if recent_visits %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small">
+            <tr>
+              <th style="width: 25%;">Date</th>
+              <th style="width: 25%;">Doctor</th>
+              <th style="width: 35%;">Reason</th>
+              <th style="width: 15%;" class="text-end pe-4">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for visit in recent_visits %}
+              <tr>
+                <td>{{ visit.date_display }}</td>
+                <td>{{ visit.doctor }}</td>
+                <td>{{ visit.reason }}</td>
+                <td class="text-end pe-4">
+                  {% if visit.status == 'attended' %}
+                    <span class="badge bg-success">Complete</span>
+                  {% elif visit.status == 'no-show' %}
+                    <span class="badge bg-danger">No Show</span>
+                  {% elif visit.status == 'cancelled' %}
+                    <span class="badge bg-secondary">Cancelled</span>
+                  {% else %}
+                    <span class="badge bg-primary">{{ visit.status|title }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-center py-4 text-muted">
+        <p class="mb-0">No past visits recorded.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+</div>
+
+<!-- Calendar Script -->
+<script>
+  const bookedEvents = {{ calendar_events_json|safe }};
+
+  let currentYear, currentMonth;
+  const today = new Date();
+
+  function initCalendar() {
+    currentYear = today.getFullYear();
+    currentMonth = today.getMonth(); // 0 = Jan, 11 = Dec
+    renderCalendar(currentYear, currentMonth);
+
+    document.getElementById('calPrevBtn').addEventListener('click', () => {
+      currentMonth--;
+      if (currentMonth < 0) {
+        currentMonth = 11;
+        currentYear--;
+      }
+      renderCalendar(currentYear, currentMonth);
+    });
+
+    document.getElementById('calNextBtn').addEventListener('click', () => {
+      currentMonth++;
+      if (currentMonth > 11) {
+        currentMonth = 0;
+        currentYear++;
+      }
+      renderCalendar(currentYear, currentMonth);
+    });
+
+    document.getElementById('calTodayBtn').addEventListener('click', () => {
+      currentYear = today.getFullYear();
+      currentMonth = today.getMonth();
+      renderCalendar(currentYear, currentMonth);
+    });
+  }
+
+  function renderCalendar(year, month) {
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    document.getElementById('calMonthYear').textContent = `${monthNames[month]} ${year}`;
+
+    const firstDayIndex = new Date(year, month, 1).getDay(); // 0 = Sunday
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+    const calBody = document.getElementById('calBody');
+    calBody.innerHTML = "";
+
+    let dateCount = 1;
+    let nextMonthCount = 1;
+    let totalCells = (firstDayIndex + daysInMonth > 35) ? 42 : 35;
+
+    let row = document.createElement('tr');
+
+    for (let i = 0; i < totalCells; i++) {
+      if (i > 0 && i % 7 === 0) {
+        calBody.appendChild(row);
+        row = document.createElement('tr');
+      }
+
+      const cell = document.createElement('td');
+      cell.style.height = "52px";
+      cell.style.verticalAlign = "top";
+      cell.style.textAlign = "left";
+      cell.style.padding = "4px 6px";
+      cell.style.fontSize = "0.85rem";
+
+      if (i < firstDayIndex) {
+        // Previous month days
+        const prevDate = daysInPrevMonth - firstDayIndex + i + 1;
+        cell.className = 'text-muted bg-light';
+        cell.textContent = prevDate;
+      } else if (dateCount > daysInMonth) {
+        // Next month days
+        cell.className = 'text-muted bg-light';
+        cell.textContent = nextMonthCount;
+        nextMonthCount++;
+      } else {
+        // Current month days
+        const dayNumber = dateCount;
+        const mStr = String(month + 1).padStart(2, '0');
+        const dStr = String(dayNumber).padStart(2, '0');
+        const isoDate = `${year}-${mStr}-${dStr}`;
+
+        const isToday = (
+          year === today.getFullYear() &&
+          month === today.getMonth() &&
+          dayNumber === today.getDate()
+        );
+
+        cell.innerHTML = `<span class="${isToday ? 'badge bg-secondary rounded-pill' : 'fw-semibold'}">${dayNumber}</span>`;
+
+        // If date has a booked appointment
+        if (bookedEvents[isoDate] && bookedEvents[isoDate].length > 0) {
+          cell.classList.add('table-primary');
+          cell.style.cursor = 'pointer';
+          cell.title = bookedEvents[isoDate].map(a => `${a.doctor} (${a.reason})`).join(', ');
+
+          cell.addEventListener('click', () => {
+            const infoBox = document.getElementById('calSelectedInfo');
+            const titleEl = document.getElementById('calSelectedDateTitle');
+            const detailsEl = document.getElementById('calSelectedDateDetails');
+
+            titleEl.textContent = `Appointment on ${isoDate}:`;
+            detailsEl.innerHTML = bookedEvents[isoDate].map(a =>
+              `<div class="mb-1"><strong>${a.doctor}</strong> - ${a.reason} <span class="text-secondary small">(${a.office})</span></div>`
+            ).join('');
+            infoBox.classList.remove('d-none');
+          });
+        }
+
+        dateCount++;
+      }
+
+      row.appendChild(cell);
+    }
+
+    calBody.appendChild(row);
+  }
+
+  document.addEventListener('DOMContentLoaded', initCalendar);
+</script>
+{% endblock %}
