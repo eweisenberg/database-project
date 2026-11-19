@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Medical History - Health System Management{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <h2 class="fw-bold mb-0">Medical History</h2>
+  </div>
+</div>
+
+<!-- Navigation Tabs for Visits vs Outreach Messages -->
+<ul class="nav nav-pills mb-4" id="historyTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active fw-semibold" id="visits-tab" data-bs-toggle="pill" data-bs-target="#visits-pane" type="button" role="tab" aria-controls="visits-pane" aria-selected="true">
+      Clinical Visits ({{ visits|length }})
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link fw-semibold" id="messages-tab" data-bs-toggle="pill" data-bs-target="#messages-pane" type="button" role="tab" aria-controls="messages-pane" aria-selected="false">
+      Outreach Messages ({{ messages|length }})
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content" id="historyTabsContent">
+  <!-- ==================== Clinical Visits Tab ==================== -->
+  <div class="tab-pane fade show active" id="visits-pane" role="tabpanel" aria-labelledby="visits-tab" tabindex="0">
+    {% if visits %}
+      <div class="d-flex flex-column gap-3">
+        {% for v in visits %}
+          <div class="card shadow-sm border">
+            <div class="card-body p-4">
+              <!-- Top Row: Title on Left, Date & Doctor on Right -->
+              <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <h5 class="fw-bold text-dark mb-0">
+                  {{ v.reason or v.service_type or 'Clinical Visit' }}
+                </h5>
+                <span class="text-secondary fw-semibold small">
+                  {{ v.date_display }}, {{ v.doctor }}
+                </span>
+              </div>
+
+              <!-- Diagnosis & Clinical Notes -->
+              <div class="text-dark mb-3">
+                {% if v.diagnosis %}
+                  <div class="mb-1">
+                    <strong>Diagnosis:</strong> {{ v.diagnosis }}
+                  </div>
+                {% endif %}
+                {% if v.clinical_notes %}
+                  <div class="text-secondary">
+                    {{ v.clinical_notes }}
+                  </div>
+                {% elif not v.diagnosis %}
+                  <div class="text-muted small fst-italic">No visit notes recorded.</div>
+                {% endif %}
+              </div>
+
+              <!-- Prescriptions (Rx Badges) -->
+              {% if v.prescriptions %}
+                <div class="d-flex flex-wrap gap-2 pt-2 border-top">
+                  {% for rx in v.prescriptions %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fw-semibold" style="font-size: 0.85rem;">
+                      &#128138; Rx: {{ rx.medication }} {{ rx.dosage }}{% if rx.duration %} ({{ rx.duration }}){% endif %}
+                    </span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card shadow-sm border-0">
+        <div class="card-body text-center py-5 text-muted">
+          <p class="fs-5 mb-1">No past attended visits recorded</p>
+          <p class="small text-secondary mb-3">Completed appointments and physician visit notes will appear here.</p>
+          <a href="{{ url_for('patient.book') }}" class="btn btn-primary btn-sm">Book an Appointment</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- ==================== Outreach Messages Tab ==================== -->
+  <div class="tab-pane fade" id="messages-pane" role="tabpanel" aria-labelledby="messages-tab" tabindex="0">
+    {% if messages %}
+      <div class="d-flex flex-column gap-3">
+        {% for m in messages %}
+          <div class="card shadow-sm border">
+            <div class="card-body p-4">
+              <div class="d-flex justify-content-between align-items-baseline mb-2">
+                <h6 class="fw-bold mb-0">
+                  From: {{ m.staff_sender }}
+                </h6>
+                <span class="text-secondary small">
+                  {{ m.date_display }}, {{ m.time_display }}
+                </span>
+              </div>
+              <div class="p-3 bg-light rounded text-dark mt-2 border">
+                {{ m.template }}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="card shadow-sm border-0">
+        <div class="card-body text-center py-5 text-muted">
+          <p class="fs-5 mb-1">No outreach messages received</p>
+          <p class="small text-secondary mb-0">Automated reminder campaigns and staff outreach will appear here.</p>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

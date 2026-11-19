@@ -642,7 +642,107 @@ def providers():
 @patient_bp.route("/history")
 @role_required("patient")
 def history():
-    return render_placeholder("Medical History")
+    patient_id = session.get("user_id")
+
+    visits = []
+    messages = []
+
+    try:
+        conn = get_db_connection("patient")
+        cursor = conn.cursor(dictionary=True)
+
+        # 1. Past attended visits (from catalog query)
+        cursor.execute(
+            """
+            SELECT a.appointment_id, a.date, a.time, a.reason, a.status,
+                   a.diagnosis, a.clinical_notes,
+                   d.first_name AS doctor_first, d.last_name AS doctor_last,
+                   st.type AS service_type
+            FROM Appointment a
+            JOIN Doctor d ON a.doctor_id = d.doctor_id
+            LEFT JOIN ServiceType st ON a.service_id = st.service_id
+            WHERE a.patient_id = %s AND a.status = 'attended'
+            ORDER BY a.date DESC, a.time DESC
+            """,
+            (patient_id,)
+        )
+        raw_visits = cursor.fetchall()
+
+        # 2. Prescriptions for this patient's appointments
+        cursor.execute(
+            """
+            SELECT p.prescription_id, p.medication, p.dosage, p.duration, p.appointment_id
+            FROM Prescription p
+            JOIN Appointment a ON p.appointment_id = a.appointment_id
+            WHERE a.patient_id = %s
+            """,
+            (patient_id,)
+        )
+        raw_rx = cursor.fetchall()
+
+        rx_by_appt = {}
+        for rx in raw_rx:
+            aid = rx["appointment_id"]
+            if aid not in rx_by_appt:
+                rx_by_appt[aid] = []
+            rx_by_appt[aid].append(rx)
+
+        for v in raw_visits:
+            v_date = v["date"]
+            date_display = v_date.strftime("%b %d, %Y") if hasattr(v_date, "strftime") else str(v_date)
+            doc_display = format_short_doctor(v["doctor_first"], v["doctor_last"])
+            aid = v["appointment_id"]
+
+            visits.append({
+                "id": aid,
+                "date_display": date_display,
+                "doctor": doc_display,
+                "reason": v.get("reason"),
+                "service_type": v.get("service_type"),
+                "diagnosis": v.get("diagnosis"),
+                "clinical_notes": v.get("clinical_notes"),
+                "prescriptions": rx_by_appt.get(aid, [])
+            })
+
+        # 3. Outreach messages sent to this patient (from catalog query)
+        cursor.execute(
+            """
+            SELECT m.date, m.time, m.template, s.first_name AS staff_first, s.last_name AS staff_last
+            FROM Message m
+            JOIN Receives r ON m.message_id = r.message_id
+            JOIN Staff s ON m.staff_id = s.staff_id
+            WHERE r.patient_id = %s
+            ORDER BY m.date DESC, m.time DESC
+            """,
+            (patient_id,)
+        )
+        raw_messages = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        for m in raw_messages:
+            m_date = m["date"]
+            date_disp = m_date.strftime("%b %d, %Y") if hasattr(m_date, "strftime") else str(m_date)
+            time_disp = format_time(m["time"])
+            staff_last = m.get("staff_last") or ""
+            staff_name = f"{m['staff_first']} {staff_last}".strip() if staff_last else m.get("staff_first", "Staff")
+
+            messages.append({
+                "date_display": date_disp,
+                "time_display": time_disp,
+                "template": m["template"],
+                "staff_sender": staff_name
+            })
+
+    except Exception as e:
+        flash(f"Error loading medical history: {str(e)}", "danger")
+
+    return render_template(
+        "patient/history.html",
+        visits=visits,
+        messages=messages
+    )
 
 @patient_bp.route("/profile", methods=["GET", "POST"])
 @role_required("patient")
