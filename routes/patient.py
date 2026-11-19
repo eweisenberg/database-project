@@ -644,7 +644,148 @@ def providers():
 def history():
     return render_placeholder("Medical History")
 
-@patient_bp.route("/profile")
+@patient_bp.route("/profile", methods=["GET", "POST"])
 @role_required("patient")
 def profile():
-    return render_placeholder("My Profile")
+    patient_id = session.get("user_id")
+
+    if request.method == "POST":
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        phone_number = request.form.get("phone_number", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        dob = request.form.get("dob", "").strip()
+        gender = request.form.get("gender", "").strip()
+        street_address = request.form.get("street_address", "").strip()
+        city = request.form.get("city", "").strip()
+        state = request.form.get("state", "").strip().upper()
+        zip_code = request.form.get("zip_code", "").strip()
+
+        # Optional fields: blank out => None (NULL in DB)
+        insurance = request.form.get("insurance", "").strip() or None
+        member_id = request.form.get("member_id", "").strip() or None
+        emergency_contact = request.form.get("emergency_contact", "").strip() or None
+
+        required_items = [
+            ("first_name", first_name),
+            ("last_name", last_name),
+            ("phone_number", phone_number),
+            ("email", email),
+            ("dob", dob),
+            ("gender", gender),
+            ("street_address", street_address),
+            ("city", city),
+            ("state", state),
+            ("zip_code", zip_code),
+        ]
+        if any(not val for _, val in required_items):
+            flash("Please fill in all required fields.", "danger")
+            return redirect(url_for("patient.profile"))
+
+        if len(state) != 2:
+            flash("State must be a 2-letter abbreviation (e.g., VA).", "danger")
+            return redirect(url_for("patient.profile"))
+
+        try:
+            conn = get_db_connection("patient")
+            cursor = conn.cursor()
+
+            # Ensure ZipCode exists
+            cursor.execute(
+                "INSERT IGNORE INTO ZipCode (zip_code, city, state) VALUES (%s, %s, %s)",
+                (zip_code, city, state)
+            )
+
+            # Update Patient record
+            cursor.execute(
+                """
+                UPDATE Patient
+                SET first_name = %s,
+                    last_name = %s,
+                    phone_number = %s,
+                    email = %s,
+                    insurance = %s,
+                    gender = %s,
+                    street_address = %s,
+                    zip_code = %s,
+                    dob = %s,
+                    member_id = %s,
+                    emergency_contact = %s
+                WHERE patient_id = %s
+                """,
+                (
+                    first_name, last_name, phone_number, email, insurance,
+                    gender, street_address, zip_code, dob, member_id, emergency_contact,
+                    patient_id
+                )
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # Update session user_name if name changed
+            session["user_name"] = f"{first_name} {last_name}"
+            flash("Profile updated successfully!", "success")
+            return redirect(url_for("patient.profile"))
+
+        except mysql.connector.Error as err:
+            if err.errno == 1062:
+                err_msg = str(err).lower()
+                if "email" in err_msg:
+                    flash("This email address is already in use by another account.", "danger")
+                elif "phone_number" in err_msg or "phone" in err_msg:
+                    flash("This phone number is already in use by another account.", "danger")
+                else:
+                    flash("This contact information is already in use by another account.", "danger")
+            else:
+                flash(f"Database error: {err.msg}", "danger")
+            return redirect(url_for("patient.profile"))
+        except Exception as e:
+            flash(f"An unexpected error occurred: {str(e)}", "danger")
+            return redirect(url_for("patient.profile"))
+
+    # GET request: load current patient data
+    patient_data = None
+    try:
+        conn = get_db_connection("patient")
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT p.patient_id, p.first_name, p.last_name, p.phone_number, p.email,
+                   p.insurance, p.gender, p.street_address, p.zip_code, p.dob,
+                   p.member_id, p.emergency_contact,
+                   z.city, z.state
+            FROM Patient p
+            LEFT JOIN ZipCode z ON p.zip_code = z.zip_code
+            WHERE p.patient_id = %s
+            """,
+            (patient_id,)
+        )
+        patient_data = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if patient_data:
+            dob_val = patient_data.get("dob")
+            patient_data["dob_iso"] = dob_val.isoformat() if hasattr(dob_val, "isoformat") else (str(dob_val) if dob_val else "")
+    except Exception as e:
+        flash(f"Error loading profile: {str(e)}", "danger")
+
+    if not patient_data:
+        patient_data = {
+            "first_name": session.get("user_name", "Patient").split()[0],
+            "last_name": "",
+            "phone_number": "",
+            "email": "",
+            "dob_iso": "",
+            "gender": "Prefer not to say",
+            "street_address": "",
+            "zip_code": "",
+            "city": "",
+            "state": "",
+            "insurance": "",
+            "member_id": "",
+            "emergency_contact": ""
+        }
+
+    return render_template("patient/profile.html", patient=patient_data)
