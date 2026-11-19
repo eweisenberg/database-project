@@ -8,8 +8,7 @@ from routes.utils import role_required, render_placeholder
 patient_bp = Blueprint("patient", __name__, url_prefix="/patient")
 
 def format_short_doctor(first, last):
-    initial = f"{first[0]}." if first else ""
-    return f"Dr. {initial} {last}".strip()
+    return f"Dr. {first} {last}".strip()
 
 def format_time(t):
     if not t:
@@ -492,10 +491,153 @@ def cancel_appointment():
 
     return redirect(url_for("patient.appointments"))
 
+def calculate_next_open_date(doctor_id, fully_booked_set):
+    check_date = date.today()
+    for _ in range(60):
+        if check_date.weekday() < 5:  # Weekdays only (Mon-Fri)
+            date_key = (doctor_id, check_date.isoformat())
+            if date_key not in fully_booked_set:
+                return check_date.strftime("%B %d").replace(" 0", " ")
+        check_date += timedelta(days=1)
+    return "Check Schedule"
+
 @patient_bp.route("/providers")
 @role_required("patient")
 def providers():
-    return render_placeholder("Find a Provider")
+    search_q = request.args.get("q", "").strip()
+    office_filter = request.args.get("office_id", "").strip()
+    specialty_filter = request.args.get("specialty", "").strip()
+
+    offices = []
+    specialties = []
+    formatted_providers = []
+
+    try:
+        conn = get_db_connection("patient")
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT o.office_id, o.street_address, z.city, z.state
+            FROM Office o
+            JOIN ZipCode z ON o.zip_code = z.zip_code
+            ORDER BY z.city ASC, o.street_address ASC
+            """
+        )
+        offices = cursor.fetchall()
+
+        cursor.execute("SELECT name FROM Specialty ORDER BY name ASC")
+        specialties = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT doctor_id, date
+            FROM Appointment
+            WHERE date >= CURRENT_DATE AND status != 'cancelled'
+            GROUP BY doctor_id, date
+            HAVING COUNT(*) >= 14
+            """
+        )
+        booked_rows = cursor.fetchall()
+        fully_booked_set = set()
+        for br in booked_rows:
+            d_val = br["date"]
+            d_str = d_val.isoformat() if hasattr(d_val, "isoformat") else str(d_val)
+            fully_booked_set.add((br["doctor_id"], d_str))
+
+        where_clauses = ["1=1"]
+        params = []
+
+        if search_q:
+            where_clauses.append("(d.first_name LIKE %s OR d.last_name LIKE %s OR CONCAT(d.first_name, ' ', d.last_name) LIKE %s)")
+            q_like = f"%{search_q}%"
+            params.extend([q_like, q_like, q_like])
+
+        if office_filter:
+            where_clauses.append("d.doctor_id IN (SELECT doctor_id FROM WorksAt WHERE office_id = %s)")
+            params.append(office_filter)
+
+        if specialty_filter:
+            where_clauses.append("d.doctor_id IN (SELECT doctor_id FROM SpecializesIn WHERE specialty_name = %s)")
+            params.append(specialty_filter)
+
+        where_sql = " AND ".join(where_clauses)
+
+        query = f"""
+            SELECT d.doctor_id, d.first_name, d.last_name, d.practice,
+                   s.specialty_name,
+                   w.office_id, o.street_address, z.city, z.state
+            FROM Doctor d
+            LEFT JOIN SpecializesIn s ON d.doctor_id = s.doctor_id
+            LEFT JOIN WorksAt w ON d.doctor_id = w.doctor_id
+            LEFT JOIN Office o ON w.office_id = o.office_id
+            LEFT JOIN ZipCode z ON o.zip_code = z.zip_code
+            WHERE {where_sql}
+            ORDER BY d.last_name ASC, d.first_name ASC
+        """
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        # Group by doctor_id so each provider appears exactly once
+        doctors_map = {}
+        for r in rows:
+            did = r["doctor_id"]
+            if did not in doctors_map:
+                doctors_map[did] = {
+                    "doctor_id": did,
+                    "first_name": r["first_name"],
+                    "last_name": r["last_name"],
+                    "practice": r.get("practice"),
+                    "specialties": set(),
+                    "offices": [],
+                    "office_ids": set()
+                }
+
+            if r.get("specialty_name"):
+                doctors_map[did]["specialties"].add(r["specialty_name"])
+
+            oid = r.get("office_id")
+            if oid and oid not in doctors_map[did]["office_ids"]:
+                doctors_map[did]["office_ids"].add(oid)
+                doctors_map[did]["offices"].append({
+                    "office_id": oid,
+                    "street_address": r.get("street_address") or "",
+                    "city": r.get("city") or "",
+                    "state": r.get("state") or ""
+                })
+
+        for did, dinfo in doctors_map.items():
+            doc_name = format_short_doctor(dinfo["first_name"], dinfo["last_name"])
+            specialties_list = sorted(list(dinfo["specialties"]))
+            specialty_str = ", ".join(specialties_list) if specialties_list else "General Medicine"
+            next_open_str = calculate_next_open_date(did, fully_booked_set)
+            primary_office_id = dinfo["offices"][0]["office_id"] if dinfo["offices"] else None
+
+            formatted_providers.append({
+                "doctor_id": did,
+                "office_id": primary_office_id,
+                "name_display": doc_name,
+                "specialty_display": specialty_str,
+                "practice": dinfo["practice"],
+                "offices": dinfo["offices"],
+                "next_open": next_open_str
+            })
+
+    except Exception as e:
+        flash(f"Error loading providers: {str(e)}", "danger")
+
+    return render_template(
+        "patient/providers.html",
+        providers=formatted_providers,
+        offices=offices,
+        specialties=specialties,
+        current_q=search_q,
+        current_office_id=office_filter,
+        current_specialty=specialty_filter
+    )
 
 @patient_bp.route("/history")
 @role_required("patient")
