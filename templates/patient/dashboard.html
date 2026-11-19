@@ -51,7 +51,9 @@
       <div class="card-body p-4">
         <div class="small fw-semibold mb-1">Next Appointment</div>
         {% if next_appointment %}
-          <h3 class="fw-bold text-dark mb-1">{{ next_appointment.date_display }}</h3>
+          <h3 class="fw-bold text-dark mb-1">
+            {{ next_appointment.date_display }}{% if next_appointment.time_display %}, {{ next_appointment.time_display }}{% endif %}
+          </h3>
           <p class="text-secondary mb-3">{{ next_appointment.doctor_clinic }}</p>
           <div class="d-flex gap-2">
             <a href="{{ url_for('patient.appointments') }}" class="btn btn-outline-primary btn-sm px-3">
@@ -238,9 +240,21 @@
             const titleEl = document.getElementById('calSelectedDateTitle');
             const detailsEl = document.getElementById('calSelectedDateDetails');
 
-            titleEl.textContent = `Appointment on ${isoDate}:`;
-            detailsEl.innerHTML = bookedEvents[isoDate].map(a =>
-              `<div class="mb-1"><strong>${a.doctor}</strong> - ${a.reason} <span class="text-secondary small">(${a.office})</span></div>`
+            const dateObj = new Date(year, month, dayNumber);
+            const dateFormatted = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+            const events = bookedEvents[isoDate];
+
+            if (events && events.length === 1 && events[0].time) {
+              titleEl.textContent = `Appointment on ${dateFormatted} at ${events[0].time}`;
+            } else {
+              titleEl.textContent = `Appointments on ${dateFormatted}:`;
+            }
+
+            detailsEl.innerHTML = events.map(a =>
+              `<div class="mb-1">
+                <span>${a.doctor}</span>
+                <span class="text-secondary small">(${a.reason}, ${a.office})</span>
+              </div>`
             ).join('');
             infoBox.classList.remove('d-none');
           });
