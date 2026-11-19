@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}My Appointments - Health System Management{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h2 class="fw-bold mb-0">My appointments</h2>
+    <a href="{{ url_for('patient.book') }}" class="btn btn-primary btn-sm">
+      + Book New Appointment
+    </a>
+  </div>
+
+  <!-- Filter Buttons on Left & Sort Dropdown on Right -->
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 py-2">
+    <!-- Filter Tabs (All / Upcoming / Past) -->
+    <div class="btn-group" role="group" aria-label="Appointment Filters">
+      <a href="{{ url_for('patient.appointments', filter='all', sort=current_sort) }}"
+         class="btn btn-sm {% if current_filter == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        All
+      </a>
+      <a href="{{ url_for('patient.appointments', filter='upcoming', sort=current_sort) }}"
+         class="btn btn-sm {% if current_filter == 'upcoming' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        Upcoming
+      </a>
+      <a href="{{ url_for('patient.appointments', filter='past', sort=current_sort) }}"
+         class="btn btn-sm {% if current_filter == 'past' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        Past
+      </a>
+    </div>
+
+    <!-- Sort by Dropdown -->
+    <div class="d-flex align-items-center gap-2">
+      <span class="small text-muted fw-semibold">Sort by</span>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          {% if current_sort == 'asc' %}
+            Date (Oldest first)
+          {% else %}
+            Date (Newest first)
+          {% endif %}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+          <li>
+            <a class="dropdown-item {% if current_sort != 'asc' %}active{% endif %}"
+               href="{{ url_for('patient.appointments', filter=current_filter, sort='desc') }}">
+              Date (Newest first)
+            </a>
+          </li>
+          <li>
+            <a class="dropdown-item {% if current_sort == 'asc' %}active{% endif %}"
+               href="{{ url_for('patient.appointments', filter=current_filter, sort='asc') }}">
+              Date (Oldest first)
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Appointments Table Card -->
+<div class="card shadow-sm border-0">
+  <div class="card-body p-0">
+    {% if appointments %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small">
+            <tr>
+              <th style="width: 20%;">Date</th>
+              <th style="width: 15%;">Time</th>
+              <th style="width: 25%;">Provider</th>
+              <th style="width: 20%;">Status</th>
+              <th style="width: 20%;" class="text-end pe-4">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for appt in appointments %}
+              <tr>
+                <td class="fw-semibold">{{ appt.date_display }}</td>
+                <td>{{ appt.time_display }}</td>
+                <td>
+                  <div>{{ appt.doctor }}</div>
+                  <div class="small text-muted">{{ appt.reason }}</div>
+                </td>
+                <td>
+                  {% if appt.status == 'scheduled' %}
+                    <span class="badge bg-warning text-dark">Pending</span>
+                  {% elif appt.status == 'attended' %}
+                    <span class="badge bg-success">Complete</span>
+                  {% elif appt.status == 'no-show' %}
+                    <span class="badge bg-danger">No-show</span>
+                  {% elif appt.status == 'cancelled' %}
+                    <span class="badge bg-secondary">Cancelled</span>
+                  {% else %}
+                    <span class="badge bg-info text-dark">{{ appt.status|title }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-end pe-4">
+                  {% if appt.can_modify %}
+                    <!-- Reschedule Button -->
+                    <button type="button"
+                            class="btn btn-outline-primary btn-sm me-1 reschedule-btn"
+                            title="Reschedule"
+                            data-bs-toggle="modal"
+                            data-bs-target="#rescheduleModal"
+                            data-id="{{ appt.id }}"
+                            data-doctor-id="{{ appt.doctor_id }}"
+                            data-doctor-name="{{ appt.doctor }}"
+                            data-date="{{ appt.raw_date }}"
+                            data-time="{{ appt.raw_time }}">Reschedule
+                    </button>
+
+                    <!-- Cancel (Delete) Button -->
+                    <button type="button"
+                            class="btn btn-outline-danger btn-sm cancel-btn"
+                            title="Cancel"
+                            data-bs-toggle="modal"
+                            data-bs-target="#cancelModal"
+                            data-id="{{ appt.id }}"
+                            data-doctor-name="{{ appt.doctor }}"
+                            data-date-time="{{ appt.date_display }} at {{ appt.time_display }}">Cancel
+                    </button>
+                  {% else %}
+                    <!-- View Link for Past Visits -->
+                    <a href="{{ url_for('patient.history') }}" class="btn btn-outline-primary btn-sm">
+                      View
+                    </a>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-center py-5 text-muted">
+        <p class="fs-5 mb-1">No appointments found</p>
+        <p class="small text-secondary mb-3">You don't have any appointments matching the selected filter.</p>
+        <a href="{{ url_for('patient.book') }}" class="btn btn-primary btn-sm">Schedule a Visit</a>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ================= Reschedule Modal ================= -->
+<div class="modal fade" id="rescheduleModal" tabindex="-1" aria-labelledby="rescheduleModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('patient.reschedule_appointment') }}" id="rescheduleForm">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold" id="rescheduleModalLabel">Reschedule Appointment</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="appointment_id" id="modalApptId">
+          <input type="hidden" name="doctor_id" id="modalDoctorId">
+          <input type="hidden" name="time" id="modalSelectedTime">
+
+          <div class="p-3 bg-light rounded mb-3 small">
+            <div><strong>Provider:</strong> <span id="modalDoctorName"></span></div>
+            <div><strong>Current Time:</strong> <span id="modalCurrentTime"></span></div>
+          </div>
+
+          <!-- New Date Picker (Weekdays only, >= today) -->
+          <div class="mb-3">
+            <label for="modalDatePicker" class="form-label fw-semibold">Choose New Date (Weekdays only)</label>
+            <input type="date" class="form-control" id="modalDatePicker" name="date" required>
+            <div id="modalDateHelp" class="form-text small text-muted">Please select a future weekday.</div>
+          </div>
+
+          <!-- Time Slots Selection -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold d-block">Choose New 30-Minute Slot</label>
+            <div id="modalSlotsLoading" class="text-center py-2 text-muted small d-none">
+              Loading available slots...
+            </div>
+            <div id="modalSlotsContainer" class="row g-2">
+              <div class="col-12 text-muted small py-2">Select a date above to view open slots.</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary btn-sm px-3" id="modalSubmitBtn" disabled>
+            Save New Time
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ================= Cancel Confirmation Modal ================= -->
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('patient.cancel_appointment') }}">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold text-danger" id="cancelModalLabel">Cancel Appointment</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="appointment_id" id="cancelModalApptId">
+          <p class="mb-2">Are you sure you want to cancel your appointment with <strong id="cancelModalDoctor"></strong>?</p>
+          <p class="text-muted small mb-0">Scheduled for <span id="cancelModalDateTime" class="fw-semibold"></span>. This appointment record will be permanently deleted.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Keep Appointment</button>
+          <button type="submit" class="btn btn-danger btn-sm">Yes, Cancel Appointment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Reschedule & Cancel JavaScript -->
+<script>
+  const rescheduleModalEl = document.getElementById('rescheduleModal');
+  const cancelModalEl = document.getElementById('cancelModal');
+
+  // Pre-defined 30-min weekday slots
+  const allSlots = [
+    { time: "09:00:00", label: "9:00 AM" },
+    { time: "09:30:00", label: "9:30 AM" },
+    { time: "10:00:00", label: "10:00 AM" },
+    { time: "10:30:00", label: "10:30 AM" },
+    { time: "11:00:00", label: "11:00 AM" },
+    { time: "11:30:00", label: "11:30 AM" },
+    { time: "13:00:00", label: "1:00 PM" },
+    { time: "13:30:00", label: "1:30 PM" },
+    { time: "14:00:00", label: "2:00 PM" },
+    { time: "14:30:00", label: "2:30 PM" },
+    { time: "15:00:00", label: "3:00 PM" },
+    { time: "15:30:00", label: "3:30 PM" },
+    { time: "16:00:00", label: "4:00 PM" },
+    { time: "16:30:00", label: "4:30 PM" },
+  ];
+
+  // Set min date for datepicker to tomorrow
+  const datePicker = document.getElementById('modalDatePicker');
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  datePicker.min = tomorrow.toISOString().split('T')[0];
+
+  // Handle Reschedule Modal Open
+  rescheduleModalEl.addEventListener('show.bs.modal', function (event) {
+    const btn = event.relatedTarget;
+    const apptId = btn.getAttribute('data-id');
+    const doctorId = btn.getAttribute('data-doctor-id');
+    const doctorName = btn.getAttribute('data-doctor-name');
+    const apptDate = btn.getAttribute('data-date');
+    const apptTime = btn.getAttribute('data-time');
+
+    document.getElementById('modalApptId').value = apptId;
+    document.getElementById('modalDoctorId').value = doctorId;
+    document.getElementById('modalDoctorName').textContent = doctorName;
+    document.getElementById('modalCurrentTime').textContent = `${apptDate} at ${apptTime}`;
+    document.getElementById('modalSelectedTime').value = "";
+    document.getElementById('modalSubmitBtn').disabled = true;
+
+    // Default picker date
+    datePicker.value = apptDate;
+    fetchModalSlots();
+  });
+
+  datePicker.addEventListener('change', function () {
+    const selectedDate = new Date(this.value + "T00:00:00");
+    const day = selectedDate.getDay();
+    if (day === 0 || day === 6) {
+      alert("Appointments are only available Monday through Friday.");
+      this.value = "";
+      document.getElementById('modalSlotsContainer').innerHTML =
+        '<div class="col-12 text-danger small py-2">Please select a weekday.</div>';
+      document.getElementById('modalSubmitBtn').disabled = true;
+      return;
+    }
+    fetchModalSlots();
+  });
+
+  async function fetchModalSlots() {
+    const doctorId = document.getElementById('modalDoctorId').value;
+    const dateVal = datePicker.value;
+    const container = document.getElementById('modalSlotsContainer');
+    const loading = document.getElementById('modalSlotsLoading');
+    const submitBtn = document.getElementById('modalSubmitBtn');
+    const timeInput = document.getElementById('modalSelectedTime');
+
+    timeInput.value = "";
+    submitBtn.disabled = true;
+
+    if (!doctorId || !dateVal) {
+      container.innerHTML = '<div class="col-12 text-muted small py-2">Select a date above.</div>';
+      return;
+    }
+
+    loading.classList.remove('d-none');
+    container.innerHTML = "";
+
+    let bookedTimes = [];
+    try {
+      const resp = await fetch(`/patient/api/booked-slots?doctor_id=${doctorId}&date=${dateVal}`);
+      const data = await resp.json();
+      bookedTimes = data.booked_times || [];
+    } catch (e) {
+      console.error(e);
+    }
+
+    loading.classList.add('d-none');
+
+    allSlots.forEach(slot => {
+      const col = document.createElement('div');
+      col.className = 'col-6 col-sm-4';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm w-100 py-1 modal-slot-btn';
+
+      const shortTime = slot.time.slice(0, 5);
+      const isBooked = bookedTimes.some(bt => bt.startsWith(shortTime));
+
+      if (isBooked) {
+        btn.classList.add('btn-light', 'text-muted', 'border');
+        btn.disabled = true;
+        btn.innerHTML = `<span class="text-decoration-line-through">${slot.label}</span>`;
+      } else {
+        btn.classList.add('btn-outline-primary');
+        btn.textContent = slot.label;
+        btn.dataset.time = slot.time;
+
+        btn.addEventListener('click', function () {
+          document.querySelectorAll('.modal-slot-btn').forEach(b => {
+            b.classList.remove('btn-primary', 'text-white');
+            if (!b.disabled) b.classList.add('btn-outline-primary');
+          });
+          btn.classList.remove('btn-outline-primary');
+          btn.classList.add('btn-primary', 'text-white');
+
+          timeInput.value = slot.time;
+          submitBtn.disabled = false;
+        });
+      }
+
+      col.appendChild(btn);
+      container.appendChild(col);
+    });
+  }
+
+  // Handle Cancel Modal Open
+  cancelModalEl.addEventListener('show.bs.modal', function (event) {
+    const btn = event.relatedTarget;
+    const apptId = btn.getAttribute('data-id');
+    const doctorName = btn.getAttribute('data-doctor-name');
+    const dateTime = btn.getAttribute('data-date-time');
+
+    document.getElementById('cancelModalApptId').value = apptId;
+    document.getElementById('cancelModalDoctor').textContent = doctorName;
+    document.getElementById('cancelModalDateTime').textContent = dateTime;
+  });
+</script>
+{% endblock %}

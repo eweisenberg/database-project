@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+{% block title %}Book an Appointment - Health System Management{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+  <h2 class="fw-bold mb-1">Book an appointment</h2>
+  <p class="text-muted mb-0">Select an office, provider, and an available weekday time slot.</p>
+</div>
+
+<form method="POST" action="{{ url_for('patient.book') }}" id="bookApptForm">
+  <!-- Top Row: Office location, Provider, Visit Type (3 Dropdowns) -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <label for="officeSelect" class="form-label fw-semibold">Office location</label>
+      <select class="form-select" id="officeSelect" name="office_id" required>
+        <option value="" disabled {% if not selected_office_id %}selected{% endif %}>Select an office...</option>
+        {% for o in offices %}
+          <option value="{{ o.office_id }}" {% if selected_office_id == o.office_id %}selected{% endif %}>
+            {{ o.city }}, {{ o.state }} ({{ o.street_address }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-md-4">
+      <label for="doctorSelect" class="form-label fw-semibold">Provider</label>
+      <select class="form-select" id="doctorSelect" name="doctor_id" required>
+        <option value="" disabled {% if not selected_doctor_id %}selected{% endif %}>Select a provider...</option>
+        {% for d in doctors %}
+          <option value="{{ d.doctor_id }}" data-office="{{ d.office_id }}" {% if selected_doctor_id == d.doctor_id %}selected{% endif %}>
+            {{ d.name_display }} ({{ d.practice or 'General' }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-md-4">
+      <label for="serviceSelect" class="form-label fw-semibold">Visit Type</label>
+      <select class="form-select" id="serviceSelect" name="service_id" required>
+        <option value="" disabled selected>Select visit type...</option>
+        {% for s in service_types %}
+          <option value="{{ s.service_id }}">{{ s.type }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <!-- Hidden input for selected date and time -->
+  <input type="hidden" name="date" id="selectedDateInput" value="">
+  <input type="hidden" name="time" id="selectedTimeInput" value="">
+
+  <!-- Main Section: Calendar on Left, Slot Selection on Right -->
+  <div class="row g-4 mb-4">
+    <!-- Left Column: Calendar Card -->
+    <div class="col-lg-6 col-md-7">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="calPrevBtn" title="Previous Month">&lt;</button>
+          <h5 class="card-title mb-0 fw-bold text-uppercase" id="calMonthYear">Calendar</h5>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="calNextBtn" title="Next Month">&gt;</button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-bordered text-center align-middle mb-0" style="table-layout: fixed;">
+              <thead class="table-light">
+                <tr class="small text-secondary fw-semibold">
+                  <th>S</th><th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th>S</th>
+                </tr>
+              </thead>
+              <tbody id="calBody">
+                <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer bg-white border-top py-2 px-3 small text-muted d-flex justify-content-between align-items-center">
+          <span><span class="badge bg-primary">&nbsp;</span> Selected Date &nbsp;|&nbsp; Weekdays Only</span>
+          <button type="button" class="btn btn-link btn-sm text-decoration-none p-0" id="calTodayBtn">Jump to Today</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Time Slots, Reason, and Confirm -->
+    <div class="col-lg-6 col-md-5 ps-lg-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body p-4 d-flex flex-column justify-content-between">
+          <div>
+            <!-- Date Display Header -->
+            <h4 class="fw-bold text-dark mb-3" id="displaySelectedDate">Select a weekday on the calendar</h4>
+
+            <!-- Prompt if no provider chosen -->
+            <div id="selectProviderAlert" class="alert alert-info py-2 small mb-3">
+              Please choose an Office and Provider above to view open slots.
+            </div>
+
+            <!-- Morning Slots -->
+            <div class="mb-3">
+              <h6 class="fw-bold text-secondary mb-2">Morning</h6>
+              <div class="row g-2" id="morningSlotsContainer">
+                <!-- Populated via JS -->
+              </div>
+            </div>
+
+            <!-- Afternoon Slots -->
+            <div class="mb-4">
+              <h6 class="fw-bold text-secondary mb-2">Afternoon</h6>
+              <div class="row g-2" id="afternoonSlotsContainer">
+                <!-- Populated via JS -->
+              </div>
+            </div>
+
+            <!-- Reason for Visit Textarea -->
+            <div class="mb-4">
+              <label for="reasonInput" class="form-label fw-semibold">Reason for Visit</label>
+              <textarea class="form-control" id="reasonInput" name="reason" rows="2" placeholder="Briefly describe the reason for your visit..." required></textarea>
+            </div>
+          </div>
+
+          <!-- Confirm Button -->
+          <div class="pt-2">
+            <button type="submit" class="btn btn-primary px-4" id="confirmBtn" disabled>
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<!-- Client Script for Cascading Filter, Calendar, and Fetching Open Slots -->
+<script>
+  // All doctors data for cascading filter
+  const allDoctors = [
+    {% for d in doctors %}
+      { id: "{{ d.doctor_id }}", name: "{{ d.name_display }}", practice: "{{ d.practice or 'General' }}", officeId: "{{ d.office_id }}" },
+    {% endfor %}
+  ];
+
+  // Pre-defined 30-min weekday time slots
+  const morningSlots = [
+    { time: "09:00:00", label: "9:00 AM" },
+    { time: "09:30:00", label: "9:30 AM" },
+    { time: "10:00:00", label: "10:00 AM" },
+    { time: "10:30:00", label: "10:30 AM" },
+    { time: "11:00:00", label: "11:00 AM" },
+    { time: "11:30:00", label: "11:30 AM" },
+  ];
+
+  const afternoonSlots = [
+    { time: "13:00:00", label: "1:00 PM" },
+    { time: "13:30:00", label: "1:30 PM" },
+    { time: "14:00:00", label: "2:00 PM" },
+    { time: "14:30:00", label: "2:30 PM" },
+    { time: "15:00:00", label: "3:00 PM" },
+    { time: "15:30:00", label: "3:30 PM" },
+    { time: "16:00:00", label: "4:00 PM" },
+    { time: "16:30:00", label: "4:30 PM" },
+  ];
+
+  let currentYear, currentMonth;
+  const today = new Date();
+  let selectedDateStr = "";
+  let selectedTimeStr = "";
+
+  // 1. Cascading Office -> Doctor Dropdown
+  const officeSelect = document.getElementById('officeSelect');
+  const doctorSelect = document.getElementById('doctorSelect');
+
+  function updateDoctorOptions(preserveSelected = false) {
+    const chosenOfficeId = officeSelect.value;
+    const currentDoc = doctorSelect.value;
+
+    doctorSelect.innerHTML = '<option value="" disabled selected>Select a provider...</option>';
+
+    const filtered = allDoctors.filter(d => !chosenOfficeId || d.officeId === chosenOfficeId);
+    filtered.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = `${d.name} (${d.practice})`;
+      if (preserveSelected && d.id === currentDoc) {
+        opt.selected = true;
+      }
+      doctorSelect.appendChild(opt);
+    });
+
+    if (filtered.length === 1) {
+      doctorSelect.selectedIndex = 1;
+    }
+
+    refreshSlots();
+  }
+
+  officeSelect.addEventListener('change', () => updateDoctorOptions(false));
+  doctorSelect.addEventListener('change', () => refreshSlots());
+
+  // 2. Calendar Logic
+  function initCalendar() {
+    currentYear = today.getFullYear();
+    currentMonth = today.getMonth();
+
+    // Default to next upcoming weekday
+    let nextWeekday = new Date();
+    nextWeekday.setDate(nextWeekday.getDate() + 1);
+    while (nextWeekday.getDay() === 0 || nextWeekday.getDay() === 6) {
+      nextWeekday.setDate(nextWeekday.getDate() + 1);
+    }
+    selectDate(nextWeekday);
+
+    renderCalendar(currentYear, currentMonth);
+
+    document.getElementById('calPrevBtn').addEventListener('click', () => {
+      currentMonth--;
+      if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+      renderCalendar(currentYear, currentMonth);
+    });
+
+    document.getElementById('calNextBtn').addEventListener('click', () => {
+      currentMonth++;
+      if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+      renderCalendar(currentYear, currentMonth);
+    });
+
+    document.getElementById('calTodayBtn').addEventListener('click', () => {
+      currentYear = today.getFullYear();
+      currentMonth = today.getMonth();
+      renderCalendar(currentYear, currentMonth);
+    });
+  }
+
+  function renderCalendar(year, month) {
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    document.getElementById('calMonthYear').textContent = `${monthNames[month]} ${year}`;
+
+    const firstDayIndex = new Date(year, month, 1).getDay(); // 0 = Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+    const calBody = document.getElementById('calBody');
+    calBody.innerHTML = "";
+
+    let dateCount = 1;
+    let nextMonthCount = 1;
+    let totalCells = (firstDayIndex + daysInMonth > 35) ? 42 : 35;
+
+    let row = document.createElement('tr');
+
+    for (let i = 0; i < totalCells; i++) {
+      if (i > 0 && i % 7 === 0) {
+        calBody.appendChild(row);
+        row = document.createElement('tr');
+      }
+
+      const cell = document.createElement('td');
+      cell.style.height = "50px";
+      cell.style.verticalAlign = "top";
+      cell.style.textAlign = "left";
+      cell.style.padding = "4px 6px";
+      cell.style.fontSize = "0.85rem";
+
+      const dayOfWeek = i % 7; // 0 = Sun, 6 = Sat
+      const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+      if (i < firstDayIndex) {
+        const prevDate = daysInPrevMonth - firstDayIndex + i + 1;
+        cell.className = 'text-muted bg-light';
+        cell.textContent = prevDate;
+      } else if (dateCount > daysInMonth) {
+        cell.className = 'text-muted bg-light';
+        cell.textContent = nextMonthCount;
+        nextMonthCount++;
+      } else {
+        const dayNumber = dateCount;
+        const cellDate = new Date(year, month, dayNumber);
+        const mStr = String(month + 1).padStart(2, '0');
+        const dStr = String(dayNumber).padStart(2, '0');
+        const isoDate = `${year}-${mStr}-${dStr}`;
+
+        // Compare dates (without time)
+        const cellDateNorm = new Date(year, month, dayNumber);
+        const todayNorm = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const isPast = (cellDateNorm < todayNorm);
+
+        if (isWeekend) {
+          cell.className = 'bg-light text-muted';
+          cell.style.cursor = 'not-allowed';
+          cell.innerHTML = `<span class="small">${dayNumber}</span>`;
+        } else if (isPast) {
+          cell.className = 'bg-light text-black-50';
+          cell.style.cursor = 'not-allowed';
+          cell.title = 'Past dates cannot be booked';
+          cell.innerHTML = `<span class="small">${dayNumber}</span>`;
+        } else {
+          // Valid weekday
+          cell.style.cursor = 'pointer';
+          const isSelected = (isoDate === selectedDateStr);
+
+          if (isSelected) {
+            cell.classList.add('table-primary');
+            cell.innerHTML = `<span class="fw-bold text-primary">${dayNumber}</span>`;
+          } else {
+            cell.innerHTML = `<span class="fw-semibold">${dayNumber}</span>`;
+          }
+
+          cell.addEventListener('click', () => {
+            selectDate(cellDate);
+            renderCalendar(year, month);
+          });
+        }
+
+        dateCount++;
+      }
+
+      row.appendChild(cell);
+    }
+
+    calBody.appendChild(row);
+  }
+
+  function selectDate(d) {
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const dateNum = d.getDate();
+
+    const mStr = String(month + 1).padStart(2, '0');
+    const dStr = String(dateNum).padStart(2, '0');
+    selectedDateStr = `${year}-${mStr}-${dStr}`;
+    document.getElementById('selectedDateInput').value = selectedDateStr;
+
+    // Format for display (e.g. Sat, March 14, 2026)
+    const options = { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' };
+    document.getElementById('displaySelectedDate').textContent = d.toLocaleDateString('en-US', options);
+
+    refreshSlots();
+  }
+
+  // 3. Fetch Booked Slots via API & Render Slot Buttons
+  async function refreshSlots() {
+    const doctorId = doctorSelect.value;
+    const alertBox = document.getElementById('selectProviderAlert');
+    const morningContainer = document.getElementById('morningSlotsContainer');
+    const afternoonContainer = document.getElementById('afternoonSlotsContainer');
+
+    selectedTimeStr = "";
+    document.getElementById('selectedTimeInput').value = "";
+    checkCanConfirm();
+
+    if (!doctorId) {
+      alertBox.classList.remove('d-none');
+      renderSlotButtons([], morningSlots, morningContainer, true);
+      renderSlotButtons([], afternoonSlots, afternoonContainer, true);
+      return;
+    }
+
+    alertBox.classList.add('d-none');
+
+    let bookedTimes = [];
+    if (selectedDateStr) {
+      try {
+        const resp = await fetch(`/patient/api/booked-slots?doctor_id=${doctorId}&date=${selectedDateStr}`);
+        const data = await resp.json();
+        bookedTimes = data.booked_times || [];
+      } catch (err) {
+        console.error("Error fetching booked slots:", err);
+      }
+    }
+
+    renderSlotButtons(bookedTimes, morningSlots, morningContainer, false);
+    renderSlotButtons(bookedTimes, afternoonSlots, afternoonContainer, false);
+  }
+
+  function renderSlotButtons(bookedTimes, slotList, container, disabledAll) {
+    container.innerHTML = "";
+
+    slotList.forEach(slot => {
+      const col = document.createElement('div');
+      col.className = 'col-6';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm w-100 py-2';
+
+      const shortTime = slot.time.slice(0, 5); // "09:00"
+      const isBooked = bookedTimes.some(bt => bt.startsWith(shortTime));
+
+      if (disabledAll) {
+        btn.classList.add('btn-outline-secondary', 'disabled');
+        btn.disabled = true;
+        btn.textContent = slot.label;
+      } else if (isBooked) {
+        btn.classList.add('btn-light', 'text-muted', 'border');
+        btn.disabled = true;
+        btn.style.cursor = 'not-allowed';
+        btn.innerHTML = `<span>${slot.label}</span>`;
+      } else {
+        btn.classList.add('btn-outline-primary', 'slot-btn');
+        btn.textContent = slot.label;
+        btn.dataset.time = slot.time;
+
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.slot-btn').forEach(b => {
+            b.classList.remove('btn-primary', 'text-white');
+            b.classList.add('btn-outline-primary');
+          });
+          btn.classList.remove('btn-outline-primary');
+          btn.classList.add('btn-primary', 'text-white');
+
+          selectedTimeStr = slot.time;
+          document.getElementById('selectedTimeInput').value = selectedTimeStr;
+          checkCanConfirm();
+        });
+      }
+
+      col.appendChild(btn);
+      container.appendChild(col);
+    });
+  }
+
+  function checkCanConfirm() {
+    const confirmBtn = document.getElementById('confirmBtn');
+    const doctorId = doctorSelect.value;
+    const serviceId = document.getElementById('serviceSelect').value;
+    const hasDate = Boolean(selectedDateStr);
+    const hasTime = Boolean(selectedTimeStr);
+
+    confirmBtn.disabled = !(doctorId && serviceId && hasDate && hasTime);
+  }
+
+  document.getElementById('serviceSelect').addEventListener('change', checkCanConfirm);
+  document.getElementById('reasonInput').addEventListener('input', checkCanConfirm);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initCalendar();
+    // Pre-filter doctors if an office is already selected
+    if (officeSelect.value) {
+      updateDoctorOptions(true);
+    }
+  });
+</script>
+{% endblock %}
