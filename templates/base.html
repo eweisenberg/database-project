@@ -58,7 +58,7 @@
             <span class="navbar-text me-3">
               {{ session.get('user_name') }} ({{ session.get('role')|title }})
             </span>
-            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Logout</a>
+            <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center" href="{{ url_for('auth.logout') }}">Logout</a>
           </div>
         {% endif %}
       </div>
