@@ -39,7 +39,7 @@
             Date (Newest first)
           {% endif %}
         </button>
-        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+        <ul class="dropdown-menu dropdown-menu-end">
           <li>
             <a class="dropdown-item {% if current_sort != 'asc' %}active{% endif %}"
                href="{{ url_for('patient.appointments', filter=current_filter, sort='desc') }}">
@@ -59,7 +59,7 @@
 </div>
 
 <!-- Appointments Table Card -->
-<div class="card shadow-sm border-0">
+<div class="card pb-0">
   <div class="card-body p-0">
     {% if appointments %}
       <div class="table-responsive">

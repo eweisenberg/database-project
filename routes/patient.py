@@ -431,7 +431,6 @@ def reschedule_appointment():
         conn = get_db_connection("patient")
         cursor = conn.cursor()
 
-        # Milestone 2 UPDATE query
         cursor.execute(
             """
             UPDATE Appointment
@@ -471,7 +470,6 @@ def cancel_appointment():
         conn = get_db_connection("patient")
         cursor = conn.cursor()
 
-        # Milestone 2 DELETE query
         cursor.execute(
             """
             DELETE FROM Appointment
